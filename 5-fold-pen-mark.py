@@ -1,14 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
-import cv2
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim import lr_scheduler
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.data.sampler import SubsetRandomSampler, RandomSampler, SequentialSampler
+from torch.utils.data import Dataset
+from torch.utils.data.sampler import RandomSampler, SequentialSampler
 from warmup_scheduler import GradualWarmupScheduler
 from efficientnet_pytorch import model as efficientnet_model
 import albumentations
@@ -21,28 +18,28 @@ from torch.nn import Identity
 
 DEBUG = False
 
-backbone_model = 'efficientnet-b0' # Modelo de efficientnet a ser utilizado
+backbone_model = 'efficientnet-b0'
 pretrained_model = {
-    backbone_model: 'pre-trained/efficientnet-b0-08094119.pth'
+    backbone_model: 'pre-trained-models/efficientnet-b0-08094119.pth'
 }
 
-data_dir = 'dataset' # Diretório raiz dos dados
-images_dir = os.path.join(data_dir, 'tiles') # Path para o diretório das imagens
+data_dir = 'dataset' 
+images_dir = os.path.join(data_dir, 'tiles') 
 
-df_train = pd.read_csv("dataset/train.csv")
-df_val = pd.read_csv("dataset/val.csv")
-df_test = pd.read_csv("dataset/test.csv")
+df_train = pd.read_csv("data/train.csv")
+df_val = pd.read_csv("data/val.csv")
+df_test = pd.read_csv("data/test.csv")
 df_val = df_val.drop(columns=["Unnamed: 0"])
 df_test = df_test.drop(columns=["Unnamed: 0"])
 df_train_val = pd.concat([df_train, df_val])
 
-df_pen_mask = pd.read_csv("images_with_pen_marks.csv")
+df_pen_mask = pd.read_csv("data/without_pen_mask.csv")
 
 df_filtered = df_train_val[~df_train_val['image_id'].isin(df_pen_mask['image_id'])]
 
 
-n_folds = 5 # Número de folds da validação cruzada
-seed = 42 # Semente aleatória
+n_folds = 5 
+seed = 42
 shuffle = True # Embaralha os dados
 
 batch_size = 2 # Tamanho do batch
@@ -116,6 +113,8 @@ class PandasDataset(Dataset):
         
         file_path = os.path.join(self.root_dir, f'{img_id}.jpg')
         tile_image = skimage.io.imread(file_path)
+        # tile_image = cv2.imread(file_path)
+        # tile_image = cv2.cvtColor(tile_image, cv2.COLOR_BGR2RGB)
 
         if self.transforms is not None:
             tile_image = self.transforms(image=tile_image)['image'] 
@@ -126,6 +125,7 @@ class PandasDataset(Dataset):
         label = np.zeros(5).astype(np.float32)
         label[:row.isup_grade] = 1.
 
+        # Retorna a imagem e o label como tensores do PyTorch
         return torch.tensor(tile_image, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
 
 
@@ -134,6 +134,7 @@ transforms_train = albumentations.Compose([
     albumentations.Transpose(p=0.5),
     albumentations.VerticalFlip(p=0.5),
     albumentations.HorizontalFlip(p=0.5),
+    albumentations.Resize(height=1250, width=1250)
 ])
 
 def calculate_metrics(preds, targets, dataframe_valid):
@@ -258,17 +259,17 @@ def model_checkpoint(model, best_metric, acctualy_metric, path):
     return best_metric
 
 
-def train_model(model, epochs, optimizer, scheduler, train_dataloader, valid_dataloader, valid_dataframe, path_to_save_model):
+def train_model(fold, model, epochs, optimizer, scheduler, train_dataloader, valid_dataloader, valid_dataframe, path_to_save_model):
     best_metric_criteria = 0. # Critério de melhor métrica
     
     for epoch in range(1, epochs + 1):
-        print(f'Epoch {epoch}/{epochs}')
+        print(f'Epoch {epoch}/{epochs}\n')
 
         train_loss = training_step(model, train_dataloader, optimizer, epoch) # Realiza a etapa de treinamento
         metrics = validation_step(model, valid_dataloader, valid_dataframe) # Realiza a etapa de validação
 
-        log_epoch = f'lr: {optimizer.param_groups[0]["lr"]:.7f} | Train loss: {np.mean(train_loss)} | Validation loss: {metrics["val_loss"]} | Validation accuracy: {metrics["val_acc"]} | QWKappa: {metrics["quadraditic_weighted_kappa"]} | QWKappa Karolinska: {metrics["quadraditic_weighted_kappa_karolinska"]} | QWKappa Radboud: {metrics["quadraditic_weighted_kappa_radboud"]}'
-        with open('log.txt', 'a') as f:
+        log_epoch = f'fold: {fold} | epoch: {epoch} | lr: {optimizer.param_groups[0]["lr"]:.7f} | Train loss: {np.mean(train_loss)} | Validation loss: {metrics["val_loss"]} | Validation accuracy: {metrics["val_acc"]} | QWKappa: {metrics["quadraditic_weighted_kappa"]} | QWKappa Karolinska: {metrics["quadraditic_weighted_kappa_karolinska"]} | QWKappa Radboud: {metrics["quadraditic_weighted_kappa_radboud"]}'
+        with open('logs/5_fold.txt', 'a') as f:
             f.write(log_epoch + '\n')
         
         # Salva o modelo se a métrica atual for melhor que a melhor métrica / Atualmente a métrica é o kappa quadrático ponderado
@@ -303,6 +304,6 @@ for fold in range(n_folds):
                                                                                                     # Os ajustes do scheduler são realizados somente após a fase de warmup
     scheduler = GradualWarmupScheduler(optimizer, multiplier = warmup_factor, total_epoch = warmup_epochs, after_scheduler=scheduler_cosine) # Ajusta a taxa de aprendizado gradualmente durante a fase de warmup, depois utiliza o scheduler_cosine
 
-    save_path = f'{backbone_model}_segmented_fold_{fold}_without_pen.pth'
+    save_path = f'pre-trained-models/pen_mark/fold_{fold}.pth'
 
-    train_model(model, n_epochs, optimizer, scheduler, train_dataloader, valid_dataloader, dataframe_valid_fold, save_path)
+    train_model(fold, model, n_epochs, optimizer, scheduler, train_dataloader, valid_dataloader, dataframe_valid_fold, save_path)
