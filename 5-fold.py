@@ -1,65 +1,54 @@
 import os
 import numpy as np
 import pandas as pd
-import cv2
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim import lr_scheduler
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.data.sampler import SubsetRandomSampler, RandomSampler, SequentialSampler
+from torch.utils.data import Dataset
+from torch.utils.data.sampler import RandomSampler, SequentialSampler
 from warmup_scheduler import GradualWarmupScheduler
 from efficientnet_pytorch import model as efficientnet_model
 import albumentations
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import cohen_kappa_score
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import skimage
 from torch.nn import Identity
 
 
 DEBUG = False
 
-backbone_model = 'efficientnet-b0' # Modelo de efficientnet a ser utilizado
+backbone_model = 'efficientnet-b0'
 pretrained_model = {
     backbone_model: 'pre-trained-models/efficientnet-b0-08094119.pth'
 }
 
-data_dir = 'dataset' # Diretório raiz dos dados
-images_dir = os.path.join(data_dir, 'tiles') # Path para o diretório das imagens
+data_dir = '../dataset' 
+images_dir = os.path.join(data_dir, 'tiles') 
 
-df_train = pd.read_csv("data/train.csv")
-df_val = pd.read_csv("data/val.csv")
-df_test = pd.read_csv("data/test.csv")
-df_val = df_val.drop(columns=["Unnamed: 0"])
-df_test = df_test.drop(columns=["Unnamed: 0"])
-df_train_val = pd.concat([df_train, df_val])
+df_train = pd.read_csv(f"{data_dir}/split/train_val.csv")
+df_test = pd.read_csv(f"{data_dir}/split/test.csv")
 
-print(df_train_val.head())
 n_folds = 5 
 seed = 42
-shuffle = True # Embaralha os dados
+shuffle = True
 
-batch_size = 2 # Tamanho do batch
-num_workers = 4 #N'úmero de processos paralelos que carregam os dados
-output_classes = 5 # Número de classes
-init_lr = 3e-4 # Taxa de aprendizado inicial
-warmup_factor = 10 #Fator de aquecimento para aumentar gradualmente a taxa de aprendizado no início do treinamento.
-loss_function = nn.BCEWithLogitsLoss() # Função de perda
+batch_size = 2
+num_workers = 4
+output_classes = 5
+init_lr = 3e-4
+warmup_factor = 10
+loss_function = nn.BCEWithLogitsLoss()
 
-warmup_epochs = 1 #Número de épocas de warmup, durante as quais a taxa de aprendizado aumenta progressivamente.
+warmup_epochs = 1
 
-n_epochs = 1 if DEBUG else 30 # Número de épocas
-#Se o modo de depuração estiver ativado, o conjunto de dados de treinamento (df_train) será reduzido para uma amostra de 100
-#df_train = df_train.sample(100).reset_index(drop=True) if DEBUG else df_train
+n_epochs = 1 if DEBUG else 30
 
-# Utiliza a GPU se disponível
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
 
-dataframe_train = df_train_val.reset_index(drop=True)
+dataframe_train = df_train
 dataframe_train.columns = dataframe_train.columns.str.strip() # Remove espaços em branco
-
 
 stratified_k_fold = StratifiedKFold(n_folds, shuffle = shuffle, random_state=seed)
 
@@ -112,8 +101,6 @@ class PandasDataset(Dataset):
         
         file_path = os.path.join(self.root_dir, f'{img_id}.jpg')
         tile_image = skimage.io.imread(file_path)
-        # tile_image = cv2.imread(file_path)
-        # tile_image = cv2.cvtColor(tile_image, cv2.COLOR_BGR2RGB)
 
         if self.transforms is not None:
             tile_image = self.transforms(image=tile_image)['image'] 
@@ -132,7 +119,7 @@ class PandasDataset(Dataset):
 transforms_train = albumentations.Compose([
     albumentations.Transpose(p=0.5),
     albumentations.VerticalFlip(p=0.5),
-    albumentations.HorizontalFlip(p=0.5),
+    albumentations.HorizontalFlip(p=0.5)    
 ])
 
 def calculate_metrics(preds, targets, dataframe_valid):
@@ -257,17 +244,17 @@ def model_checkpoint(model, best_metric, acctualy_metric, path):
     return best_metric
 
 
-def train_model(model, epochs, optimizer, scheduler, train_dataloader, valid_dataloader, valid_dataframe, path_to_save_model):
+def train_model(fold, model, epochs, optimizer, scheduler, train_dataloader, valid_dataloader, valid_dataframe, path_to_save_model):
     best_metric_criteria = 0. # Critério de melhor métrica
     
     for epoch in range(1, epochs + 1):
-        print(f'Epoch {epoch}/{epochs}')
+        print(f'Epoch {epoch}/{epochs}\n')
 
         train_loss = training_step(model, train_dataloader, optimizer, epoch) # Realiza a etapa de treinamento
         metrics = validation_step(model, valid_dataloader, valid_dataframe) # Realiza a etapa de validação
 
-        log_epoch = f'lr: {optimizer.param_groups[0]["lr"]:.7f} | Train loss: {np.mean(train_loss)} | Validation loss: {metrics["val_loss"]} | Validation accuracy: {metrics["val_acc"]} | QWKappa: {metrics["quadraditic_weighted_kappa"]} | QWKappa Karolinska: {metrics["quadraditic_weighted_kappa_karolinska"]} | QWKappa Radboud: {metrics["quadraditic_weighted_kappa_radboud"]}'
-        with open('train/logs/5_fold.txt', 'a') as f:
+        log_epoch = f'fold: {fold} | epoch: {epoch} | lr: {optimizer.param_groups[0]["lr"]:.7f} | Train loss: {np.mean(train_loss)} | Validation loss: {metrics["val_loss"]} | Validation accuracy: {metrics["val_acc"]} | QWKappa: {metrics["quadraditic_weighted_kappa"]} | QWKappa Karolinska: {metrics["quadraditic_weighted_kappa_karolinska"]} | QWKappa Radboud: {metrics["quadraditic_weighted_kappa_radboud"]}'
+        with open('logs/history/folds.txt', 'a') as f:
             f.write(log_epoch + '\n')
         
         # Salva o modelo se a métrica atual for melhor que a melhor métrica / Atualmente a métrica é o kappa quadrático ponderado
@@ -302,6 +289,6 @@ for fold in range(n_folds):
                                                                                                     # Os ajustes do scheduler são realizados somente após a fase de warmup
     scheduler = GradualWarmupScheduler(optimizer, multiplier = warmup_factor, total_epoch = warmup_epochs, after_scheduler=scheduler_cosine) # Ajusta a taxa de aprendizado gradualmente durante a fase de warmup, depois utiliza o scheduler_cosine
 
-    save_path = f'{backbone_model}_segmented_fold_{fold}.pth'
+    save_path = f'pre-trained-models/folds/fold_{fold}.pth'
 
-    train_model(model, n_epochs, optimizer, scheduler, train_dataloader, valid_dataloader, dataframe_valid_fold, save_path)
+    train_model(fold, model, n_epochs, optimizer, scheduler, train_dataloader, valid_dataloader, dataframe_valid_fold, save_path)
