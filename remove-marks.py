@@ -97,11 +97,7 @@ def extract_features(image, chip_size=(256, 256), overlap=0, threshold=1.1, outp
     new_image.save(f'{output_dir}/{new_filename}')
 
 if __name__ == '__main__':
-    # path_images = '/Users/Oseas/Documents/test_oxito/imagens/com marcas'
-    # for image in os.listdir(path_images):
-    #     if image.endswith('.jpg'):
-    #         image_path = f'/Users/Oseas/Documents/test_oxito/imagens/com marcas/{image}'
-    image_path = "../dataset/tiles/c4b1a10db8b0cdece7a1498b2fcbda7f.jpg"
+    image_path = "../dataset/tiles/1866ab99cc028bbb8ed656f1181215f1.jpg"
     extract_features(image=image_path, chip_size=(16, 16), overlap=0, threshold=1)
 
 

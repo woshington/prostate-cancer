@@ -27,8 +27,7 @@ pretrained_model = {
 data_dir = '../dataset' 
 images_dir = os.path.join(data_dir, 'tiles') 
 
-df_train = pd.read_csv(f"{data_dir}/split/train_val.csv")
-df_test = pd.read_csv(f"{data_dir}/split/test.csv")
+df_train = pd.read_csv(f"data/train_val.csv")
 
 n_folds = 5 
 seed = 42
@@ -43,7 +42,7 @@ loss_function = nn.BCEWithLogitsLoss()
 
 warmup_epochs = 1
 
-n_epochs = 1 if DEBUG else 30
+n_epochs = 15
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
@@ -121,7 +120,7 @@ transforms_train = albumentations.Compose([
     albumentations.Transpose(p=0.5),
     albumentations.VerticalFlip(p=0.5),
     albumentations.HorizontalFlip(p=0.5),
-    RemovePenMarkAlbumentations()
+    RemovePenMarkAlbumentations(is_white=False)
 ])
 
 def calculate_metrics(preds, targets, dataframe_valid):
@@ -256,10 +255,9 @@ def train_model(fold, model, epochs, optimizer, scheduler, train_dataloader, val
         metrics = validation_step(model, valid_dataloader, valid_dataframe) # Realiza a etapa de validação
 
         log_epoch = f'fold: {fold} | epoch: {epoch} | lr: {optimizer.param_groups[0]["lr"]:.7f} | Train loss: {np.mean(train_loss)} | Validation loss: {metrics["val_loss"]} | Validation accuracy: {metrics["val_acc"]} | QWKappa: {metrics["quadraditic_weighted_kappa"]} | QWKappa Karolinska: {metrics["quadraditic_weighted_kappa_karolinska"]} | QWKappa Radboud: {metrics["quadraditic_weighted_kappa_radboud"]}'
-        with open('logs/history/automatic-pen-marks.txt', 'a') as f:
+        with open('logs/history/automatic-pen-marks_black.txt', 'a') as f:
             f.write(log_epoch + '\n')
         
-        # Salva o modelo se a métrica atual for melhor que a melhor métrica / Atualmente a métrica é o kappa quadrático ponderado
         best_metric_criteria = model_checkpoint(model, best_metric_criteria, metrics["quadraditic_weighted_kappa"], path_to_save_model)
 
         scheduler.step() # Atualiza o scheduler

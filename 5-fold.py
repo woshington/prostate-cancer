@@ -26,8 +26,8 @@ pretrained_model = {
 data_dir = '../dataset' 
 images_dir = os.path.join(data_dir, 'tiles') 
 
-df_train = pd.read_csv(f"{data_dir}/split/train_val.csv")
-df_test = pd.read_csv(f"{data_dir}/split/test.csv")
+df_train = pd.read_csv(f"data/train_val.csv")
+df_test = pd.read_csv(f"data/test.csv")
 
 n_folds = 5 
 seed = 42
@@ -42,13 +42,13 @@ loss_function = nn.BCEWithLogitsLoss()
 
 warmup_epochs = 1
 
-n_epochs = 1 if DEBUG else 30
+n_epochs = 15
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 dataframe_train = df_train
-dataframe_train.columns = dataframe_train.columns.str.strip() # Remove espaços em branco
+dataframe_train.columns = dataframe_train.columns.str.strip()
 
 stratified_k_fold = StratifiedKFold(n_folds, shuffle = shuffle, random_state=seed)
 

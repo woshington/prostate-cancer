@@ -1,10 +1,10 @@
 from typing import Any
 
 from torch.utils.data import Dataset
-from skimage import io as skio
+from skimage import io as skio, color
 import numpy as np
 import torch
-from albumentations.core.transforms_interface import ImageOnlyTransform, BaseTransformInitSchema
+from albumentations.core.transforms_interface import ImageOnlyTransform
 
 class PandasDataset(Dataset):
     def __init__(self, image_dir, dataframe, transforms=None):
@@ -25,7 +25,6 @@ class PandasDataset(Dataset):
         if self.transforms is not None:
             image = self.transforms(image=image)['image']
 
-        image = image.astype(np.float32) / 255.0
         image = np.transpose(image, (2, 0, 1))
 
         label = np.zeros(5).astype(np.float32)
@@ -35,8 +34,9 @@ class PandasDataset(Dataset):
 
 
 class RemovePenMarkAlbumentations(ImageOnlyTransform):
-    def __init__(self):
+    def __init__(self, is_white=True):
         super().__init__(p=1)
+        self.is_white = is_white
 
     @staticmethod
     def calculate_channel_sums(image):
@@ -70,6 +70,64 @@ class RemovePenMarkAlbumentations(ImageOnlyTransform):
                     chip = padded_chip
 
                 if self.analyze_histogram(chip, threshold=1):
-                    img[y:y + chip_h, x:x + chip_w] = 255
+                    img[y:y + chip_h, x:x + chip_w] = 255 if self.is_white else 0
 
         return img
+
+
+class RGB2XYZTransform(ImageOnlyTransform):
+    def __init__(self, p=1.0):
+        super().__init__(p=p)
+
+    def apply(self, image, **params):
+        img = image.astype(np.float32) / 255.0
+        image = color.rgb2xyz(img)
+        return image.astype(np.float32)
+
+
+class RGB2HedTransform(ImageOnlyTransform):
+    def __init__(self, p=1.0):
+        super().__init__(p=p)
+
+    def apply(self, image, **params):
+        image = color.rgb2hed(image)
+        return image
+
+class RGB2HematoxylinTransform(ImageOnlyTransform):
+    def __init__(self, p=1.0):
+        super().__init__(p=p)
+
+    def apply(self, image, **params):
+        img = image.astype(np.float32) / 255.0
+        hed = color.rgb2hed(img)
+        h_channel = hed[:, :, 0]
+        return h_channel.astype(np.float32)
+
+class RGB2LABTransform(ImageOnlyTransform):
+    def __init__(self, p=1.0):
+        super().__init__(p=p)
+
+    def apply(self, image, **params):
+        img = image.astype(np.float32) / 255.0
+        image = color.rgb2lab(img)
+        return image.astype(np.float32)
+
+
+class RGB2LUVTransform(ImageOnlyTransform):
+    def __init__(self, p=1.0):
+        super().__init__(p=p)
+
+    def apply(self, image, **params):
+        img = image.astype(np.float32) / 255.0
+        image = color.rgb2luv(img)
+        return image.astype(np.float32)
+
+
+class RGB2HSVTransform(ImageOnlyTransform):
+    def __init__(self, p=1.0):
+        super().__init__(p=p)
+
+    def apply(self, image, **params):
+        img = image.astype(np.float32) / 255.0
+        image = color.rgb2hsv(img)
+        return image.astype(np.float32)

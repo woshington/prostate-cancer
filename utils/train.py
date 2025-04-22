@@ -28,9 +28,9 @@ def training_step(model, dataset_loader, optimizer, epoch, device, loss_function
         train_loss.append(loss_np)
         smooth_loss = sum(train_loss[-100:]) / min(len(train_loss), 100)
 
-        # print(f'epoch: {epoch} batch: {(index + 1)} of {len(bar_progress)} loss: {loss_np}, smooth loss: {smooth_loss}')
         bar_progress.set_description(
-            'loss: %.5f, smooth loss: %.5f' % (loss_np, smooth_loss))  # Atualiza a barra de progresso
+            'loss: %.5f, smooth loss: %.5f' % (loss_np, smooth_loss)
+        )
 
     return train_loss
 
@@ -74,19 +74,18 @@ def validation_step(model, dataset_loader, device, loss_function):
     }
 
 def train_model(
-        model,
-        epochs,
-        optimizer,
-        scheduler,
-        train_dataloader,
-        valid_dataloader,
-        valid_dataframe,
-        checkpoint,
-        device,
-        loss_function,
-        path_to_save_metrics,
-        path_to_save_model=None,
-        patience=20,
+    model,
+    epochs,
+    optimizer,
+    scheduler,
+    train_dataloader,
+    valid_dataloader,
+    checkpoint,
+    device,
+    loss_function,
+    path_to_save_metrics,
+    path_to_save_model=None,
+    patience=20,
 ):
     best_metric_criteria = 0.
     best_epoch = 0
@@ -102,19 +101,19 @@ def train_model(
         with open(path_to_save_metrics, 'a') as f:
             f.write(log_epoch + '\n')
 
-            if metrics["kappa"] > best_metric_criteria:
-                best_metric_criteria = metrics["kappa"]
-                best_epoch = epoch
-                epochs_without_improvement = 0
-                checkpoint(model, best_metric_criteria, metrics["kappa"], path_to_save_model)
-            else:
-                epochs_without_improvement += 1
+        if metrics["kappa"] >= best_metric_criteria:
+            best_epoch = epoch
+            epochs_without_improvement = 0
+            checkpoint(model, best_metric_criteria, metrics["kappa"], path_to_save_model)
+            best_metric_criteria = metrics["kappa"]
+        else:
+            epochs_without_improvement += 1
 
-            # Early stopping
-            if epochs_without_improvement >= patience:
-                print(f'\nEarly stopping at epoch {epoch}. No improvement for {patience} epochs.')
-                print(f'Best epoch: {best_epoch} with kappa: {best_metric_criteria:.4f}')
-                break
+        # Early stopping
+        if epochs_without_improvement >= patience:
+            print(f'\nEarly stopping at epoch {epoch}. No improvement for {patience} epochs.')
+            print(f'Best epoch: {best_epoch} with kappa: {best_metric_criteria:.4f}')
+            break
         # scheduler.step(metrics["val_loss"])
         scheduler.step()
 
@@ -127,7 +126,8 @@ def apply_active_learning(model, epochs, optimizer, scheduler, train_dataloader,
         # print(log_epoch)
 
     # return model
-def remove_images_by_entropy(model, dataset_loader, device, threshold=1.6):
+
+def remove_images_by_entropy(model, dataset_loader, device):
     model.eval()
 
     bar_progress = tqdm(dataset_loader)
@@ -138,7 +138,6 @@ def remove_images_by_entropy(model, dataset_loader, device, threshold=1.6):
 
             logits = model(batch_data)
 
-            # probs = F.softmax(logits, dim=1)
             batch_entropy = calculate_entropy(logits=logits)
             entropies = np.array(batch_entropy.cpu().numpy())
 
